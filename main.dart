@@ -9,66 +9,53 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Nhóm 5',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: HomePage(),
+      title: 'Giới thiệu bản thân',
+      home: IntroPage(),
     );
   }
 }
 
-class Member {
-  final String name;
-  final String role;
-  final String image;
-
-  Member({required this.name, required this.role, required this.image});
-}
-
-class HomePage extends StatelessWidget {
-  final List<Member> members = [
-    Member(
-      name: "Lý Ngọc Quân",
-      role: "Trưởng nhóm",
-      image: "assets/images/anhdaidien2.jpg",
-    ),
-    Member(
-      name: "Lê Văn Tùng",
-      role: "Thành Viên Nhóm",
-      image: "assets/images/anhdaidien1.jpg",
-    ),
-  ];
-
+class IntroPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Trang chủ - Nhóm chúng tôi"),
+        title: Text("Giới thiệu bản thân"),
         centerTitle: true,
       ),
-      body: ListView.builder(
-        itemCount: members.length,
-        itemBuilder: (context, index) {
-          final member = members[index];
-          return Card(
-            margin: EdgeInsets.all(10),
-            elevation: 5,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                radius: 30,
-                backgroundImage: NetworkImage(member.image),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 60,
+                backgroundImage: AssetImage("assets/images/anhdaidien1.jpg"),
               ),
-              title: Text(
-                member.name,
-                style: TextStyle(fontWeight: FontWeight.bold),
+              SizedBox(height: 20),
+              Text(
+                "Lê Văn Tùng",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              subtitle: Text(member.role),
-              trailing: Icon(Icons.arrow_forward_ios),
-            ),
-          );
-        },
+              SizedBox(height: 10),
+              Text(
+                "Sinh viên lớp DCCNTT13.10.5\nKhoa Công nghệ Thông tin\nTrường Đại học Công nghệ Đông Á",
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 20),
+              Text(
+                "Tôi là người có tinh thần học hỏi, yêu thích công nghệ và đặc biệt quan tâm đến lĩnh vực lập trình. "
+                    "Trong quá trình học tập, tôi luôn cố gắng trau dồi kiến thức chuyên môn cũng như kỹ năng làm việc nhóm để hoàn thành tốt các dự án được giao. "
+                    "Mục tiêu của tôi trong tương lai là trở thành một lập trình viên chuyên nghiệp, có khả năng xây dựng các ứng dụng hữu ích và mang lại giá trị cho cộng đồng.",
+                textAlign: TextAlign.justify,
+                style: TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
