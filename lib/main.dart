@@ -34,19 +34,7 @@ class PharmacyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.cyan),
         useMaterial3: true,
-        scaffoldBackgroundColor: Colors.grey[50],
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.cyan, width: 2)),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey[200]!)),
-          color: Colors.white,
-        ),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
@@ -61,7 +49,8 @@ class PharmacyApp extends StatelessWidget {
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
-  @override State<AdminDashboard> createState() => _AdminDashboardState();
+  @override
+  State<AdminDashboard> createState() => _AdminDashboardState();
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
@@ -77,56 +66,117 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email ?? "";
+    final avatarInitial = email.isNotEmpty ? email[0].toUpperCase() : "A";
+
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       body: Row(
         children: [
+          // NavigationRail bên trái
           NavigationRail(
             selectedIndex: _selectedIndex,
-            onDestinationSelected: (int index) => setState(() => _selectedIndex = index),
-            extended: MediaQuery.of(context).size.width > 1000,
+            onDestinationSelected: (index) =>
+                setState(() => _selectedIndex = index),
+            extended: MediaQuery.of(context).size.width > 1100,
             backgroundColor: Colors.white,
-            elevation: 1,
-            useIndicator: true,
-            indicatorColor: Colors.cyan[50],
-            unselectedIconTheme: const IconThemeData(color: Colors.grey, opacity: 0.8),
-            unselectedLabelTextStyle: const TextStyle(color: Colors.grey),
-            selectedIconTheme: const IconThemeData(color: Colors.cyan, size: 28),
-            selectedLabelTextStyle: const TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold),
-            destinations: const [
-              NavigationRailDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: Text('Tổng quan')),
-              NavigationRailDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: Text('Kho Hàng')),
-              NavigationRailDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: Text('Đơn Online')),
-              NavigationRailDestination(icon: Icon(Icons.point_of_sale_outlined), selectedIcon: Icon(Icons.point_of_sale), label: Text('POS Tại Quầy')),
-              NavigationRailDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart), label: Text('Doanh Thu')),
-            ],
-            leading: Column(
-              children: [
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.cyan, borderRadius: BorderRadius.circular(16)),
-                  child: const Icon(Icons.local_pharmacy, color: Colors.white, size: 32),
-                ),
-                const SizedBox(height: 12),
-                if (MediaQuery.of(context).size.width > 1000) 
-                  const Text("PHARMACY", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.cyan, fontSize: 16)),
-                const SizedBox(height: 24),
-              ],
+            elevation: 6,
+            leading: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.cyan,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.local_pharmacy,
+                      color: Colors.white,
+                      size: 36,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "PHARMACY",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.cyan,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            trailing: Expanded(
-                child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child: IconButton(
-                            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-                            onPressed: () => FirebaseAuth.instance.signOut()
-                        )
-                    )
-                )
+            trailing: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.cyan.shade100,
+                    child: Text(avatarInitial),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 120,
+                    child: Text(
+                      email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    onPressed: () => FirebaseAuth.instance.signOut(),
+                  ),
+                ],
+              ),
+            ),
+            destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.dashboard_outlined),
+                selectedIcon: Icon(Icons.dashboard),
+                label: Text('Tổng quan'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.inventory_2_outlined),
+                selectedIcon: Icon(Icons.inventory_2),
+                label: Text('Kho hàng'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.local_shipping_outlined),
+                selectedIcon: Icon(Icons.local_shipping),
+                label: Text('Đơn online'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.point_of_sale_outlined),
+                selectedIcon: Icon(Icons.point_of_sale),
+                label: Text('POS quầy'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.bar_chart_outlined),
+                selectedIcon: Icon(Icons.bar_chart),
+                label: Text('Doanh thu'),
+              ),
+            ],
+          ),
+
+          // Phần nội dung bên phải
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF8FAFC),
+              child: _screens[_selectedIndex],
             ),
           ),
-          Expanded(child: Container(color: Colors.grey[50], child: _screens[_selectedIndex])),
         ],
       ),
     );

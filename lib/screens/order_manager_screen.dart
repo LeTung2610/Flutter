@@ -1,97 +1,158 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class OrderManagerScreen extends StatelessWidget {
   const OrderManagerScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
+    final fmt = NumberFormat("#,###", "vi_VN");
+    final dateFormat = DateFormat('dd/MM/yyyy - HH:mm');
+
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text("ĐƠN HÀNG ONLINE", style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent, elevation: 0),
-      body: StreamBuilder(
-        stream: FirebaseFirestore.instance.collection('orders').orderBy('timestamp', descending: true).snapshots(),
+      appBar: AppBar(
+        title: const Text("QUẢN LÝ ĐƠN HÀNG ONLINE", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('orders').snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) return Center(child: Text("Lỗi: ${snapshot.error}"));
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
           var docs = snapshot.data!.docs;
-          if (docs.isEmpty) return const Center(child: Text("Không có đơn hàng nào"));
+          if (docs.isEmpty) {
+            return const Center(child: Text("Chưa có đơn hàng nào", style: TextStyle(fontSize: 18)));
+          }
+
+          // Sắp xếp đơn mới nhất lên trên
+          List<QueryDocumentSnapshot> sortedDocs = List.from(docs);
+          sortedDocs.sort((a, b) {
+            var dataA = a.data() as Map<String, dynamic>;
+            var dataB = b.data() as Map<String, dynamic>;
+            var timeA = dataA['createdAt'] ?? dataA['timestamp'] ?? Timestamp.now();
+            var timeB = dataB['createdAt'] ?? dataB['timestamp'] ?? Timestamp.now();
+            return (timeB as Timestamp).compareTo(timeA as Timestamp);
+          });
 
           return ListView.builder(
-            padding: const EdgeInsets.all(32),
-            itemCount: docs.length,
+            padding: const EdgeInsets.all(24),
+            itemCount: sortedDocs.length,
             itemBuilder: (context, index) {
-              var data = docs[index].data();
+              var data = sortedDocs[index].data() as Map<String, dynamic>;
+              String docId = sortedDocs[index].id;
               String status = data['status'] ?? 'Chờ Duyệt';
-              Color statusColor = status == 'Chờ Duyệt' ? Colors.orange : (status == 'Đang Giao' ? Colors.blue : Colors.green);
+              int totalPrice = int.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0;
+
+              // Status styling
+              Color statusColor;
+              IconData statusIcon;
+              String statusText = status;
+
+              switch (status) {
+                case 'Đang Giao':
+                  statusColor = Colors.blue;
+                  statusIcon = Icons.local_shipping;
+                  break;
+                case 'Hoàn Thành':
+                  statusColor = Colors.green;
+                  statusIcon = Icons.check_circle;
+                  break;
+                case 'Hủy':
+                  statusColor = Colors.red;
+                  statusIcon = Icons.cancel;
+                  break;
+                default:
+                  statusColor = Colors.orange;
+                  statusIcon = Icons.pending_actions;
+              }
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 20),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                elevation: 3,
+                child: ExpansionTile(
+                  leading: CircleAvatar(
+                    backgroundColor: statusColor.withOpacity(0.1),
+                    child: Icon(statusIcon, color: statusColor),
+                  ),
+                  title: Row(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(color: Colors.cyan[50], borderRadius: BorderRadius.circular(10)),
-                                child: const Icon(Icons.receipt_long, color: Colors.cyan),
-                              ),
-                              const SizedBox(width: 16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Mã đơn: #${docs[index].id.substring(0, 8).toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                  Text(data['customerName'] ?? "Khách hàng ẩn danh", style: TextStyle(color: Colors.grey[600], fontSize: 14)),
-                                ],
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                            child: Text(status, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12)),
-                          ),
-                        ],
-                      ),
-                      const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider()),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("${int.tryParse(data['totalPrice']?.toString() ?? '0')} VNĐ", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  const Icon(Icons.phone, size: 14, color: Colors.grey),
-                                  const SizedBox(width: 6),
-                                  Text("${data['phone']}", style: TextStyle(color: Colors.grey[600])),
-                                ],
-                              ),
-                            ],
-                          ),
-                          if (status != 'Hoàn Thành') ElevatedButton(
-                            onPressed: () {
-                              String nextStatus = status == 'Chờ Duyệt' ? 'Đang Giao' : 'Hoàn Thành';
-                              FirebaseFirestore.instance.collection('orders').doc(docs[index].id).update({'status': nextStatus});
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.cyan, 
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: Text(status == 'Chờ Duyệt' ? "Duyệt Đơn" : "Giao Thành Công"),
-                          ) else const Row(children: [Icon(Icons.check_circle, color: Colors.green), SizedBox(width: 8), Text("Hoàn thành", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))]),
-                        ],
+                      Text("Mã: #${docId.substring(docId.length - 6).toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
                     ],
                   ),
+                  subtitle: Text(
+                    "Khách: ${data['userId'] ?? 'Khách vãng lai'} • ${dateFormat.format((data['createdAt'] ?? data['timestamp'] ?? Timestamp.now() as Timestamp).toDate())}",
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  trailing: Text(
+                    "${fmt.format(totalPrice)}đ",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                  ),
+                  children: [
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("CHI TIẾT ĐƠN HÀNG", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey)),
+                          const SizedBox(height: 12),
+                          if (data['items'] != null)
+                            ...(data['items'] as List).map((item) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text("• ${item['name']} x${item['qty']}", style: const TextStyle(fontSize: 15)),
+                                      Text("${fmt.format(item['price'])}đ", style: const TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                )),
+                          const Divider(height: 30),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (status == 'Chờ Duyệt' || status == 'Đang Giao') ...[
+                                OutlinedButton(
+                                  onPressed: () => _updateStatus(docId, 'Hủy'),
+                                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                                  child: const Text("Hủy đơn"),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    String next = status == 'Chờ Duyệt' ? 'Đang Giao' : 'Hoàn Thành';
+                                    _updateStatus(docId, next);
+                                  },
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan, foregroundColor: Colors.white),
+                                  child: Text(status == 'Chờ Duyệt' ? "Duyệt & Giao" : "Hoàn thành"),
+                                ),
+                              ] else
+                                Text(
+                                  status == 'Hoàn Thành' ? "Đã giao thành công ✅" : "Đơn đã hủy ❌",
+                                  style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -99,5 +160,9 @@ class OrderManagerScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  void _updateStatus(String id, String newStatus) {
+    FirebaseFirestore.instance.collection('orders').doc(id).update({'status': newStatus});
   }
 }

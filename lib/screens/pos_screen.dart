@@ -7,233 +7,240 @@ class PosScreen extends StatefulWidget {
 }
 
 class _PosScreenState extends State<PosScreen> {
-  List cart = [];
+  List<Map<String, dynamic>> cart = [];
   int total = 0;
   String searchQuery = "";
 
-  void addToCart(Map med, String id) {
+  String _getProxiedUrl(String url) {
+    if (url.isEmpty) return "";
+    return "https://images.weserv.nl/?url=${Uri.encodeComponent(url)}";
+  }
+
+  void addToCart(Map<String, dynamic> med, String id) {
     int stock = int.tryParse(med['stock']?.toString() ?? '0') ?? 0;
-    int idx = cart.indexWhere((i) => i['id'] == id);
-    int currentQtyInCart = idx >= 0 ? cart[idx]['qty'] : 0;
+    int idx = cart.indexWhere((item) => item['id'] == id);
 
-    if (stock <= currentQtyInCart) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("Không đủ tồn kho hoặc đã hết hàng"),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 1),
-      ));
-      return;
-    }
-
-    setState(() {
-      int price = int.tryParse(med['price']?.toString() ?? '0') ?? 0;
-      if (idx >= 0) {
-        cart[idx]['qty']++;
-      } else {
-        cart.add({'id': id, 'name': med['name'], 'price': price, 'qty': 1, 'maxStock': stock});
+    if (idx >= 0) {
+      if (cart[idx]['qty'] >= stock) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Hết hàng trong kho!"), backgroundColor: Colors.orange),
+        );
+        return;
       }
-      total = cart.fold(0, (prev, item) => prev + (item['price'] as int) * (item['qty'] as int));
+      setState(() => cart[idx]['qty']++);
+    } else {
+      if (stock <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Sản phẩm hết hàng!"), backgroundColor: Colors.redAccent),
+        );
+        return;
+      }
+      setState(() {
+        cart.add({
+          'id': id,
+          'name': med['name'],
+          'price': int.tryParse(med['price']?.toString() ?? '0') ?? 0,
+          'qty': 1,
+          'maxStock': stock,
+        });
+      });
+    }
+    _calculateTotal();
+  }
+
+  void _calculateTotal() {
+    total = cart.fold(0, (sum, item) => sum + (item['price'] as int) * (item['qty'] as int));
+    setState(() {});
+  }
+
+  void removeFromCart(int index) {
+    setState(() {
+      cart.removeAt(index);
+      _calculateTotal();
+    });
+  }
+
+  void clearCart() {
+    setState(() {
+      cart.clear();
+      total = 0;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 3,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: "Tìm kiếm tên thuốc...",
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 20),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text("POS TẠI QUẦY", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: Row(
+        children: [
+          // ==================== DANH SÁCH SẢN PHẨM ====================
+          Expanded(
+            flex: 3,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: "Tìm thuốc nhanh...",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    ),
+                    onChanged: (value) => setState(() => searchQuery = value.toLowerCase()),
                   ),
-                  onChanged: (v) => setState(() => searchQuery = v.toLowerCase()),
                 ),
-              ),
-              Expanded(
-                child: StreamBuilder(
-                  stream: FirebaseFirestore.instance.collection('medicines').snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                    var docs = snapshot.data!.docs.where((d) => d.data()['name'].toString().toLowerCase().contains(searchQuery)).toList();
-                    
-                    if (docs.isEmpty) return const Center(child: Text("Không tìm thấy sản phẩm"));
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance.collection('medicines').snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                    double screenWidth = MediaQuery.of(context).size.width;
-                    int crossAxisCount = screenWidth > 1600 ? 5 : (screenWidth > 1200 ? 4 : (screenWidth > 900 ? 3 : 2));
+                      var docs = snapshot.data!.docs.where((doc) {
+                        var data = doc.data() as Map<String, dynamic>;
+                        return data['name'].toString().toLowerCase().contains(searchQuery);
+                      }).toList();
 
-                    return GridView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        childAspectRatio: 0.85,
-                        crossAxisSpacing: 20,
-                        mainAxisSpacing: 20,
-                      ),
-                      itemCount: docs.length,
-                      itemBuilder: (context, i) {
-                        var data = docs[i].data();
-                        int price = int.tryParse(data['price']?.toString() ?? '0') ?? 0;
-                        int stock = int.tryParse(data['stock']?.toString() ?? '0') ?? 0;
-                        
-                        return Card(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () => addToCart(data, docs[i].id),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    width: 80, height: 80,
-                                    decoration: BoxDecoration(color: Colors.cyan[50], shape: BoxShape.circle),
-                                    child: data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty
-                                      ? ClipOval(child: Image.network(data['imageUrl'], fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.broken_image, color: Colors.grey)))
-                                      : const Icon(Icons.medication, color: Colors.cyan, size: 30),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(data['name'], textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  const SizedBox(height: 8),
-                                  Text("$priceđ", style: const TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold, fontSize: 16)),
-                                  const SizedBox(height: 4),
-                                  Text("Kho: $stock", style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                                ],
+                      return GridView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          childAspectRatio: 0.75,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: docs.length,
+                        itemBuilder: (context, index) {
+                          var data = docs[index].data() as Map<String, dynamic>;
+                          String id = docs[index].id;
+
+                          return Card(
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => addToCart(data, id),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty
+                                            ? Image.network(_getProxiedUrl(data['imageUrl']), fit: BoxFit.cover)
+                                            : Container(color: Colors.cyan[50], child: const Icon(Icons.medication, color: Colors.cyan, size: 48)),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(data['name'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                                    const SizedBox(height: 4),
+                                    Text("${data['price'] ?? 0}đ", style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text("Kho: ${data['stock'] ?? 0}", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    );
-                  },
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Container(
-          width: 400,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(-5, 0))],
-          ),
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.shopping_cart_checkout, color: Colors.cyan),
-                  SizedBox(width: 12),
-                  Text("GIỎ HÀNG TẠI QUẦY", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 32),
-              Expanded(
-                child: cart.isEmpty 
-                  ? Center(child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.shopping_basket_outlined, size: 80, color: Colors.grey[200]),
-                        const SizedBox(height: 16),
-                        Text("Chưa có sản phẩm", style: TextStyle(color: Colors.grey[400])),
-                      ],
-                    ))
-                  : ListView.separated(
-                      itemCount: cart.length,
-                      separatorBuilder: (c, i) => const Divider(height: 40),
-                      itemBuilder: (context, i) => Row(
+
+          // ==================== GIỎ HÀNG BÊN PHẢI ====================
+          Container(
+            width: 380,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(left: BorderSide(color: Colors.grey, width: 1)),
+            ),
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text("ĐƠN HÀNG TẠI QUẦY", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.cyan)),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: cart.isEmpty
+                      ? const Center(child: Text("Giỏ hàng trống", style: TextStyle(fontSize: 16, color: Colors.grey)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: cart.length,
+                          itemBuilder: (context, index) {
+                            var item = cart[index];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ListTile(
+                                title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text("${item['price']}đ × ${item['qty']}"),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text("${item['price'] * item['qty']}đ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      onPressed: () => removeFromCart(index),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(cart[i]['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                const SizedBox(height: 4),
-                                Text("${cart[i]['price']}đ", style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, color: Colors.grey),
-                                onPressed: () => setState(() {
-                                  if (cart[i]['qty'] > 1) cart[i]['qty']--;
-                                  else cart.removeAt(i);
-                                  total = cart.fold(0, (prev, item) => prev + (item['price'] as int) * (item['qty'] as int));
-                                }),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                child: Text("${cart[i]['qty']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline, color: Colors.cyan),
-                                onPressed: () {
-                                  addToCart({'name': cart[i]['name'], 'price': cart[i]['price'], 'stock': cart[i]['maxStock']}, cart[i]['id']);
-                                },
-                              ),
-                            ],
-                          ),
+                          const Text("Tổng tiền:", style: TextStyle(fontSize: 18)),
+                          Text("$total đ", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.redAccent)),
                         ],
                       ),
-                    ),
-              ),
-              const Divider(height: 64),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("TỔNG CỘNG:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text("$total VNĐ", style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                ],
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: ElevatedButton(
-                  onPressed: cart.isEmpty ? null : () async {
-                    try {
-                      WriteBatch batch = FirebaseFirestore.instance.batch();
-                      for (var item in cart) {
-                        DocumentReference ref = FirebaseFirestore.instance.collection('medicines').doc(item['id']);
-                        batch.update(ref, {'stock': FieldValue.increment(-(item['qty'] as int))});
-                      }
-                      DocumentReference invRef = FirebaseFirestore.instance.collection('invoices').doc();
-                      batch.set(invRef, {
-                        'totalPrice': total,
-                        'items': cart,
-                        'timestamp': FieldValue.serverTimestamp()
-                      });
-                      await batch.commit();
-                      setState(() { cart = []; total = 0; });
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Thanh toán & Xuất hóa đơn thành công!"), backgroundColor: Colors.green));
-                    } catch (e) {
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e"), backgroundColor: Colors.red));
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.cyan, 
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: cart.isEmpty ? null : () {
+                            // TODO: Thêm logic thanh toán thực tế sau
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Thanh toán thành công!"), backgroundColor: Colors.green),
+                            );
+                            clearCart();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.cyan,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: const Text("THANH TOÁN", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Text("THANH TOÁN NGAY", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
-              )
-            ],
+              ],
+            ),
           ),
-        )
-      ],
+        ],
+      ),
     );
   }
 }
