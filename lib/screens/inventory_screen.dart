@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -18,6 +19,17 @@ class InventoryScreen extends StatefulWidget {
 class _InventoryScreenState extends State<InventoryScreen> {
   String searchQuery = "";
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
+  DateTime? _parsePickedDate(String value) {
+    try {
+      return _dateOnly(_dateFormat.parseStrict(value));
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<PlatformFile?> _pickImageFromDevice() async {
     final picked = await FilePicker.platform.pickFiles(
@@ -36,7 +48,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Future<String> _uploadImageToImgBb(Uint8List fileBytes) async {
     if (!ImageUploadConfig.isConfigured) {
       throw Exception(
-        'ImgBB API key chưa được cấu hình. Vui lòng nhập key vào lib/config/image_upload_config.dart',
+        'Chưa cấu hình ImgBB API key. Vui lòng cập nhật lib/config/image_upload_config.dart',
       );
     }
 
@@ -125,9 +137,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
       if (mounted && loadingShown) _closeLoadingDialog(context);
       loadingShown = false;
       if (!mounted) return;
+      var message = "Upload ảnh thất bại: $e";
+      if (kIsWeb && e.toString().contains('Failed to fetch')) {
+        message =
+            'Upload ảnh thất bại trên Web (CORS/network). Hãy cấu hình upload proxy trong lib/config/image_upload_config.dart';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Upload ảnh thất bại: $e"),
+          content: Text(message),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -165,10 +182,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
     TextEditingController expiryCtrl,
     void Function(void Function()) setStateDialog,
   ) async {
+    final today = _dateOnly(DateTime.now());
     final selected = await showDatePicker(
       context: context,
-      initialDate: DateTime.now().add(const Duration(days: 30)),
-      firstDate: DateTime(2020),
+      initialDate: today.add(const Duration(days: 30)),
+      firstDate: today,
       lastDate: DateTime(2100),
     );
 
@@ -318,9 +336,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                DateTime? expiryDate;
-                if (expiryCtrl.text.isNotEmpty) {
-                  expiryDate = _dateFormat.parseStrict(expiryCtrl.text);
+                final expiryDate = expiryCtrl.text.isEmpty
+                    ? null
+                    : _parsePickedDate(expiryCtrl.text);
+
+                if (expiryCtrl.text.isNotEmpty && expiryDate == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Hạn sử dụng không hợp lệ"),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                if (expiryDate != null &&
+                    _dateOnly(expiryDate).isBefore(_dateOnly(DateTime.now()))) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "Không thể lưu thuốc có hạn sử dụng trong quá khứ",
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
                 }
 
                 FirebaseFirestore.instance.collection('medicines').add({
@@ -349,7 +389,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     Map<String, dynamic> data,
   ) {
     final nameCtrl = TextEditingController(text: data['name']?.toString());
-    final catCtrl = TextEditingController(text: data['category']?.toString());
+    // final catCtrl = TextEditingController(text: data['category']?.toString());
     final priceCtrl = TextEditingController(text: data['price']?.toString());
     final stockCtrl = TextEditingController(text: data['stock']?.toString());
     final imgCtrl = TextEditingController(text: data['imageUrl']?.toString());
@@ -446,9 +486,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                DateTime? expiryDate;
-                if (expiryCtrl.text.isNotEmpty) {
-                  expiryDate = _dateFormat.parseStrict(expiryCtrl.text);
+                final expiryDate = expiryCtrl.text.isEmpty
+                    ? null
+                    : _parsePickedDate(expiryCtrl.text);
+
+                if (expiryCtrl.text.isNotEmpty && expiryDate == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Hạn sử dụng không hợp lệ"),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                if (expiryDate != null &&
+                    _dateOnly(expiryDate).isBefore(_dateOnly(DateTime.now()))) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "Không thể lưu thuốc có hạn sử dụng trong quá khứ",
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
                 }
 
                 FirebaseFirestore.instance

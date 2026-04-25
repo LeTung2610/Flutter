@@ -401,15 +401,35 @@ class _PosScreenState extends State<PosScreen> {
                         child: ElevatedButton(
                           onPressed: cart.isEmpty
                               ? null
-                              : () {
-                                  // TODO: Thêm logic thanh toán thực tế sau
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("Thanh toán thành công!"),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                  clearCart();
+                              : () async {
+                                  try {
+                                    // Lưu hóa đơn vào doanh thu
+                                    await FirebaseFirestore.instance.collection('invoices').add({
+                                      'totalPrice': total,
+                                      'items': cart,
+                                      'timestamp': FieldValue.serverTimestamp(),
+                                      'type': 'pos'
+                                    });
+
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Thanh toán thành công!"),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                    clearCart();
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("Lỗi thanh toán: $e"),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
                                 },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.cyan,

@@ -84,5 +84,26 @@ lib/
    flutter run
    ```
 
+## 🖼️ Cấu Hình Upload Ảnh Web (Proxy, tránh lỗi CORS)
+Với Flutter Web, không nên gọi trực tiếp ImgBB từ trình duyệt vì dễ gặp lỗi `Failed to fetch` (CORS). Dự án đã có sẵn Cloud Function proxy:
+
+1. Cài Firebase CLI (nếu chưa có):
+  ```bash
+  npm i -g firebase-tools
+  firebase login
+  ```
+2. Deploy function trong thư mục dự án:
+  ```bash
+  cd functions
+  npm install
+  firebase functions:secrets:set IMGBB_API_KEY
+  npm run deploy
+  ```
+3. Lấy URL function dạng:
+  `https://us-central1-pharmacy-online-9bcf5.cloudfunctions.net/uploadImageToImgBB`
+4. Dán URL vào biến `uploadProxyUrl` trong [lib/config/image_upload_config.dart](lib/config/image_upload_config.dart).
+
+Sau khi cấu hình proxy, app sẽ upload ảnh qua backend (an toàn key và ổn định trên web hơn).
+
 ---
 *Bản quyền thuộc về nhóm sinh viên thực hiện chuyên đề tốt nghiệp.*

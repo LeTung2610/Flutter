@@ -96,7 +96,7 @@ class OrderManagerScreen extends StatelessWidget {
                     ],
                   ),
                   subtitle: Text(
-                    "Khách: ${data['userId'] ?? 'Khách vãng lai'} • ${dateFormat.format((data['createdAt'] ?? data['timestamp'] ?? Timestamp.now() as Timestamp).toDate())}",
+                    "Khách: ${data['userId'] ?? 'Khách vãng lai'} • ${dateFormat.format(((data['createdAt'] ?? data['timestamp'] ?? Timestamp.now()) as Timestamp).toDate())}",
                     style: const TextStyle(fontSize: 13),
                   ),
                   trailing: Text(
@@ -129,7 +129,7 @@ class OrderManagerScreen extends StatelessWidget {
                             children: [
                               if (status == 'Chờ Duyệt' || status == 'Đang Giao') ...[
                                 OutlinedButton(
-                                  onPressed: () => _updateStatus(docId, 'Hủy'),
+                                  onPressed: () => _updateStatus(docId, 'Hủy', data),
                                   style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                                   child: const Text("Hủy đơn"),
                                 ),
@@ -137,7 +137,7 @@ class OrderManagerScreen extends StatelessWidget {
                                 ElevatedButton(
                                   onPressed: () {
                                     String next = status == 'Chờ Duyệt' ? 'Đang Giao' : 'Hoàn Thành';
-                                    _updateStatus(docId, next);
+                                    _updateStatus(docId, next, data);
                                   },
                                   style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan, foregroundColor: Colors.white),
                                   child: Text(status == 'Chờ Duyệt' ? "Duyệt & Giao" : "Hoàn thành"),
@@ -162,7 +162,18 @@ class OrderManagerScreen extends StatelessWidget {
     );
   }
 
-  void _updateStatus(String id, String newStatus) {
-    FirebaseFirestore.instance.collection('orders').doc(id).update({'status': newStatus});
+  void _updateStatus(String id, String newStatus, Map<String, dynamic> orderData) {
+    FirebaseFirestore.instance.collection('orders').doc(id).update({'status': newStatus}).then((_) {
+      // Nếu trạng thái là Hoàn Thành, tự động tạo hóa đơn để nhảy số doanh thu
+      if (newStatus == 'Hoàn Thành') {
+        FirebaseFirestore.instance.collection('invoices').add({
+          'totalPrice': orderData['totalPrice'],
+          'items': orderData['items'],
+          'timestamp': FieldValue.serverTimestamp(),
+          'orderId': id,
+          'type': 'online'
+        });
+      }
+    });
   }
 }
