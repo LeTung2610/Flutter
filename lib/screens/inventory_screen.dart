@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -20,731 +21,401 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String searchQuery = "";
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
-  DateTime _dateOnly(DateTime value) =>
-      DateTime(value.year, value.month, value.day);
-
-  DateTime? _parsePickedDate(String value) {
-    try {
-      return _dateOnly(_dateFormat.parseStrict(value));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<PlatformFile?> _pickImageFromDevice() async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-
-    if (picked == null ||
-        picked.files.isEmpty ||
-        picked.files.first.bytes == null) {
-      return null;
-    }
-    return picked.files.first;
-  }
-
-  Future<String> _uploadImageToImgBb(Uint8List fileBytes) async {
-    if (!ImageUploadConfig.isConfigured) {
-      throw Exception(
-        'Chưa cấu hình ImgBB API key. Vui lòng cập nhật lib/config/image_upload_config.dart',
-      );
-    }
-
-    final base64Image = base64Encode(fileBytes);
-    final uri = Uri.parse(
-      'https://api.imgbb.com/1/upload?key=${ImageUploadConfig.imgbbApiKey}',
-    );
-
-    final response = await http
-        .post(uri, body: {'image': base64Image})
-        .timeout(
-          const Duration(seconds: 30),
-          onTimeout: () =>
-              throw TimeoutException('Upload bị timeout sau 30 giây'),
-        );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'ImgBB API trả lỗi: HTTP ${response.statusCode} - ${response.body}',
-      );
-    }
-
-    final body = jsonDecode(response.body) as Map<String, dynamic>?;
-    if (body?['success'] != true) {
-      throw Exception(
-        'ImgBB upload thất bại: ${body?['error']?['message'] ?? "Không xác định"}',
-      );
-    }
-
-    final imageUrl = body?['data']?['url']?.toString();
-    if (imageUrl == null || imageUrl.isEmpty) {
-      throw Exception('Không lấy được URL ảnh từ ImgBB');
-    }
-
-    return imageUrl;
-  }
-
-  void _closeLoadingDialog(BuildContext context) {
-    if (Navigator.of(context, rootNavigator: true).canPop()) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-  }
-
-  Future<void> _handleUploadImage(
-    BuildContext context,
-    TextEditingController imgCtrl,
-    void Function(void Function()) setStateDialog,
-  ) async {
-    bool loadingShown = false;
-    try {
-      final pickedFile = await _pickImageFromDevice();
-      if (pickedFile == null) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
-      );
-      loadingShown = true;
-
-      final imageUrl = await _uploadImageToImgBb(pickedFile.bytes!);
-      if (mounted && loadingShown) _closeLoadingDialog(context);
-      loadingShown = false;
-
-      setStateDialog(() {
-        imgCtrl.text = imageUrl;
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Tải ảnh lên thành công"),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } on TimeoutException {
-      if (mounted && loadingShown) _closeLoadingDialog(context);
-      loadingShown = false;
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Upload bị timeout. Kiểm tra mạng hoặc ImgBB API."),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } catch (e) {
-      if (mounted && loadingShown) _closeLoadingDialog(context);
-      loadingShown = false;
-      if (!mounted) return;
-      var message = "Upload ảnh thất bại: $e";
-      if (kIsWeb && e.toString().contains('Failed to fetch')) {
-        message =
-            'Upload ảnh thất bại trên Web (CORS/network). Hãy cấu hình upload proxy trong lib/config/image_upload_config.dart';
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
-  DateTime? _parseExpiryDate(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is String) return DateTime.tryParse(value);
-    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
-    return null;
-  }
-
-  bool _isExpired(DateTime? expiryDate) {
-    if (expiryDate == null) return false;
-    final endOfExpiryDay = DateTime(
-      expiryDate.year,
-      expiryDate.month,
-      expiryDate.day,
-      23,
-      59,
-      59,
-    );
-    return DateTime.now().isAfter(endOfExpiryDay);
-  }
-
-  String _formatExpiryDate(DateTime? expiryDate) {
-    if (expiryDate == null) return "Chưa cập nhật";
-    return _dateFormat.format(expiryDate);
-  }
-
-  Future<void> _pickExpiryDate(
-    BuildContext context,
-    TextEditingController expiryCtrl,
-    void Function(void Function()) setStateDialog,
-  ) async {
-    final today = _dateOnly(DateTime.now());
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: today.add(const Duration(days: 30)),
-      firstDate: today,
-      lastDate: DateTime(2100),
-    );
-
-    if (selected != null) {
-      setStateDialog(() {
-        expiryCtrl.text = _dateFormat.format(selected);
-      });
-    }
-  }
-
-  String _getProxiedUrl(String url) {
-    if (url.isEmpty) return "";
-    return "https://images.weserv.nl/?url=${Uri.encodeComponent(url)}&default=https://via.placeholder.com/150";
-  }
-
-  Widget _buildProductImage(String? url, String category) {
-    if (url != null && url.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(
-          _getProxiedUrl(url),
-          fit: BoxFit.cover,
-          width: 56,
-          height: 56,
-          errorBuilder: (context, error, stackTrace) =>
-              _buildPlaceholderIcon(category),
-        ),
-      );
-    }
-    return _buildPlaceholderIcon(category);
-  }
-
-  Widget _buildPlaceholderIcon(String category) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: Colors.cyan.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(Icons.medication, color: Colors.cyan, size: 28),
-    );
-  }
-
-  void _showAddProductDialog(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final catCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final stockCtrl = TextEditingController();
-    final imgCtrl = TextEditingController();
-    final expiryCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text("Thêm sản phẩm mới"),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: imgCtrl.text.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.network(
-                            _getProxiedUrl(imgCtrl.text),
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : const Icon(Icons.image, size: 60, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: imgCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Link ảnh (URL)",
-                  ),
-                  onChanged: (v) => setStateDialog(() {}),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _handleUploadImage(context, imgCtrl, setStateDialog),
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text("Tải ảnh từ máy"),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: "Tên thuốc"),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: catCtrl,
-                  decoration: const InputDecoration(labelText: "Danh mục"),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceCtrl,
-                  decoration: const InputDecoration(labelText: "Giá bán"),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: stockCtrl,
-                  decoration: const InputDecoration(
-                    labelText: "Số lượng tồn kho",
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: expiryCtrl,
-                  readOnly: true,
-                  onTap: () =>
-                      _pickExpiryDate(context, expiryCtrl, setStateDialog),
-                  decoration: InputDecoration(
-                    labelText: "Hạn sử dụng",
-                    hintText: "Chọn ngày hết hạn",
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_month),
-                      onPressed: () =>
-                          _pickExpiryDate(context, expiryCtrl, setStateDialog),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Hủy"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final expiryDate = expiryCtrl.text.isEmpty
-                    ? null
-                    : _parsePickedDate(expiryCtrl.text);
-
-                if (expiryCtrl.text.isNotEmpty && expiryDate == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Hạn sử dụng không hợp lệ"),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  return;
-                }
-
-                if (expiryDate != null &&
-                    _dateOnly(expiryDate).isBefore(_dateOnly(DateTime.now()))) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        "Không thể lưu thuốc có hạn sử dụng trong quá khứ",
-                      ),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  return;
-                }
-
-                FirebaseFirestore.instance.collection('medicines').add({
-                  'name': nameCtrl.text,
-                  'category': catCtrl.text,
-                  'price': int.tryParse(priceCtrl.text) ?? 0,
-                  'stock': int.tryParse(stockCtrl.text) ?? 0,
-                  'imageUrl': imgCtrl.text,
-                  'expiryDate': expiryDate != null
-                      ? Timestamp.fromDate(expiryDate)
-                      : null,
-                });
-                Navigator.pop(context);
-              },
-              child: const Text("Lưu sản phẩm"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEditProductDialog(
-    BuildContext context,
-    String id,
-    Map<String, dynamic> data,
-  ) {
-    final nameCtrl = TextEditingController(text: data['name']?.toString());
-    // final catCtrl = TextEditingController(text: data['category']?.toString());
-    final priceCtrl = TextEditingController(text: data['price']?.toString());
-    final stockCtrl = TextEditingController(text: data['stock']?.toString());
-    final imgCtrl = TextEditingController(text: data['imageUrl']?.toString());
-    final existingExpiry = _parseExpiryDate(data['expiryDate']);
-    final expiryCtrl = TextEditingController(
-      text: _formatExpiryDate(existingExpiry),
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text("Chỉnh sửa sản phẩm"),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: imgCtrl.text.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.network(
-                            _getProxiedUrl(imgCtrl.text),
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : const Icon(Icons.image, size: 60, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: imgCtrl,
-                  decoration: const InputDecoration(labelText: "Link ảnh"),
-                  onChanged: (v) => setStateDialog(() {}),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _handleUploadImage(context, imgCtrl, setStateDialog),
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text("Tải ảnh từ máy"),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: "Tên thuốc"),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceCtrl,
-                  decoration: const InputDecoration(labelText: "Giá bán"),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: stockCtrl,
-                  decoration: const InputDecoration(labelText: "Số lượng"),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: expiryCtrl,
-                  readOnly: true,
-                  onTap: () =>
-                      _pickExpiryDate(context, expiryCtrl, setStateDialog),
-                  decoration: InputDecoration(
-                    labelText: "Hạn sử dụng",
-                    hintText: "Chọn ngày hết hạn",
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.calendar_month),
-                      onPressed: () =>
-                          _pickExpiryDate(context, expiryCtrl, setStateDialog),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Hủy"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final expiryDate = expiryCtrl.text.isEmpty
-                    ? null
-                    : _parsePickedDate(expiryCtrl.text);
-
-                if (expiryCtrl.text.isNotEmpty && expiryDate == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Hạn sử dụng không hợp lệ"),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  return;
-                }
-
-                if (expiryDate != null &&
-                    _dateOnly(expiryDate).isBefore(_dateOnly(DateTime.now()))) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        "Không thể lưu thuốc có hạn sử dụng trong quá khứ",
-                      ),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  return;
-                }
-
-                FirebaseFirestore.instance
-                    .collection('medicines')
-                    .doc(id)
-                    .update({
-                      'name': nameCtrl.text,
-                      'price': int.tryParse(priceCtrl.text) ?? 0,
-                      'stock': int.tryParse(stockCtrl.text) ?? 0,
-                      'imageUrl': imgCtrl.text,
-                      'expiryDate': expiryDate != null
-                          ? Timestamp.fromDate(expiryDate)
-                          : null,
-                    });
-                Navigator.pop(context);
-              },
-              child: const Text("Cập nhật"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text(
-          "QUẢN LÝ KHO HÀNG",
-          style: TextStyle(fontWeight: FontWeight.bold),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context),
+            const SizedBox(height: 30),
+            _buildSearchBar(),
+            const SizedBox(height: 30),
+            _buildProductGrid(),
+          ],
         ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: ElevatedButton.icon(
-              onPressed: () => _showAddProductDialog(context),
-              icon: const Icon(Icons.add),
-              label: const Text("Thêm thuốc"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyan,
-                foregroundColor: Colors.white,
-              ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "QUẢN LÝ KHO HÀNG",
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF1A202C), letterSpacing: 1),
+            ),
+            const SizedBox(height: 5),
+            Text("Theo dõi và điều chỉnh danh mục dược phẩm cao cấp", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+          ],
+        ),
+        Container(
+          height: 50,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [Color(0xFF00D4C4), Color(0xFF00A89B)]),
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [BoxShadow(color: const Color(0xFF00D4C4).withOpacity(0.3), blurRadius: 15)],
+          ),
+          child: ElevatedButton.icon(
+            onPressed: () => _showProductDialog(context),
+            icon: const Icon(Icons.add_rounded, color: Colors.white),
+            label: const Text("THÊM THUỐC MỚI", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20)],
       ),
-      body: Column(
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: "Tìm kiếm tên thuốc, mã sản phẩm hoặc danh mục...",
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00D4C4)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+        ),
+        onChanged: (value) => setState(() => searchQuery = value.toLowerCase()),
+      ),
+    );
+  }
+
+  Widget _buildProductGrid() {
+    return Expanded(
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('medicines').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+          var docs = snapshot.data!.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return (data['name'] ?? "").toString().toLowerCase().contains(searchQuery);
+          }).toList();
+
+          return GridView.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 350,
+              mainAxisSpacing: 25,
+              crossAxisSpacing: 25,
+              childAspectRatio: 0.8,
+            ),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final data = docs[index].data() as Map<String, dynamic>;
+              final id = docs[index].id;
+              return _buildProductCard(id, data);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildProductCard(String id, Map<String, dynamic> data) {
+    final expiryDate = _parseExpiryDate(data['expiryDate']);
+    final isExpired = _isExpired(expiryDate);
+    final price = data['price'] ?? 0;
+    final stock = data['stock'] ?? 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: "Tìm kiếm thuốc...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
+          Expanded(
+            flex: 3,
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                  child: Container(
+                    width: double.infinity,
+                    color: const Color(0xFFF7FAFC),
+                    child: data['imageUrl'] != null && data['imageUrl'].isNotEmpty
+                        ? Image.network(
+                            "https://images.weserv.nl/?url=${Uri.encodeComponent(data['imageUrl'])}",
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.medication_rounded, size: 60, color: Color(0xFF00D4C4)),
+                          )
+                        : const Icon(Icons.medication_rounded, size: 60, color: Color(0xFF00D4C4)),
+                  ),
                 ),
-              ),
-              onChanged: (value) =>
-                  setState(() => searchQuery = value.toLowerCase()),
+                Positioned(top: 15, right: 15, child: _buildStatusBadge(isExpired, stock)),
+              ],
             ),
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('medicines')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
-
-                var docs = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return (data['name'] ?? "").toString().toLowerCase().contains(
-                    searchQuery,
-                  );
-                }).toList();
-
-                final expiredCount = docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return _isExpired(_parseExpiryDate(data['expiryDate']));
-                }).length;
-
-                return Column(
-                  children: [
-                    if (expiredCount > 0)
-                      Container(
-                        margin: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.red.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.warning_amber_rounded,
-                              color: Colors.redAccent,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "Có $expiredCount thuốc đã quá hạn. Cần ngưng bán và xử lý kho.",
-                                style: const TextStyle(
-                                  color: Colors.redAccent,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                          final data =
-                              docs[index].data() as Map<String, dynamic>;
-                          final id = docs[index].id;
-                          final expiryDate = _parseExpiryDate(
-                            data['expiryDate'],
-                          );
-                          final isExpired = _isExpired(expiryDate);
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: ListTile(
-                              leading: _buildProductImage(
-                                data['imageUrl'],
-                                data['category'] ?? "",
-                              ),
-                              title: Text(
-                                data['name'] ?? "Không tên",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${data['price'] ?? 0}đ  •  Tồn: ${data['stock'] ?? 0}",
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    "HSD: ${_formatExpiryDate(expiryDate)}",
-                                    style: TextStyle(
-                                      color: isExpired
-                                          ? Colors.redAccent
-                                          : Colors.grey[700],
-                                      fontWeight: isExpired
-                                          ? FontWeight.w700
-                                          : FontWeight.w400,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (isExpired)
-                                    Container(
-                                      margin: const EdgeInsets.only(right: 8),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        "QUÁ HẠN",
-                                        style: TextStyle(
-                                          color: Colors.redAccent,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.edit,
-                                      color: Colors.blue,
-                                    ),
-                                    onPressed: () => _showEditProductDialog(
-                                      context,
-                                      id,
-                                      data,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      color: Colors.redAccent,
-                                    ),
-                                    onPressed: () => FirebaseFirestore.instance
-                                        .collection('medicines')
-                                        .doc(id)
-                                        .delete(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                );
-              },
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(data['name'] ?? "Sản phẩm", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF2D3748)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 5),
+                      Text("Kho: $stock | HSD: ${_formatExpiryDate(expiryDate)}", style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("₫${NumberFormat("#,###").format(price)}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF00D4C4))),
+                      Row(
+                        children: [
+                          _buildIconButton(Icons.edit_note_rounded, Colors.blue, () => _showProductDialog(context, id: id, data: data)),
+                          const SizedBox(width: 8),
+                          _buildIconButton(Icons.delete_outline_rounded, Colors.redAccent, () => _confirmDelete(context, id)),
+                        ],
+                      )
+                    ],
+                  )
+                ],
+              ),
             ),
-          ),
+          )
         ],
       ),
     );
   }
+
+  Widget _buildStatusBadge(bool isExpired, int stock) {
+    Color color = const Color(0xFF00D4C4);
+    String text = "CÒN HÀNG";
+    if (isExpired) {
+      color = Colors.redAccent;
+      text = "QUÁ HẠN";
+    } else if (stock <= 0) {
+      color = Colors.orangeAccent;
+      text = "HẾT HÀNG";
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: color.withOpacity(0.9), borderRadius: BorderRadius.circular(10)),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildIconButton(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+        child: Icon(icon, color: color, size: 18),
+      ),
+    );
+  }
+
+  // ==================== DIALOG XỬ LÝ SẢN PHẨM (IMPECCABLE) ====================
+  
+  void _showProductDialog(BuildContext context, {String? id, Map<String, dynamic>? data}) {
+    final nameCtrl = TextEditingController(text: data?['name']);
+    final catCtrl = TextEditingController(text: data?['category'] ?? 'Dược phẩm');
+    final priceCtrl = TextEditingController(text: data?['price']?.toString());
+    final stockCtrl = TextEditingController(text: data?['stock']?.toString());
+    final imgCtrl = TextEditingController(text: data?['imageUrl']);
+    final expiryCtrl = TextEditingController(text: _formatExpiryDate(_parseExpiryDate(data?['expiryDate'])));
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(35)),
+          title: Text(id == null ? "THÊM SẢN PHẨM MỚI" : "CHỈNH SỬA SẢN PHẨM", 
+            style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF2D3748))),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Image Preview Area
+                  GestureDetector(
+                    onTap: () => _handleUploadImage(context, imgCtrl, setStateDialog),
+                    child: Container(
+                      width: double.infinity,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7FAFC),
+                        borderRadius: BorderRadius.circular(25),
+                        border: Border.all(color: Colors.grey.shade200),
+                        image: imgCtrl.text.isNotEmpty 
+                          ? DecorationImage(image: NetworkImage(imgCtrl.text), fit: BoxFit.contain)
+                          : null,
+                      ),
+                      child: imgCtrl.text.isEmpty 
+                        ? const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_photo_alternate_rounded, size: 50, color: Color(0xFF00D4C4)),
+                              SizedBox(height: 10),
+                              Text("Tải ảnh sản phẩm lên", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                            ],
+                          )
+                        : null,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  _buildDialogField(nameCtrl, "Tên thuốc / Thực phẩm chức năng", Icons.medication_rounded),
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
+                      Expanded(child: _buildDialogField(priceCtrl, "Giá bán (₫)", Icons.payments_rounded, isNumber: true)),
+                      const SizedBox(width: 15),
+                      Expanded(child: _buildDialogField(stockCtrl, "Số lượng kho", Icons.inventory_rounded, isNumber: true)),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  _buildDialogField(expiryCtrl, "Hạn sử dụng", Icons.calendar_today_rounded, readOnly: true, onTap: () => _pickDate(context, expiryCtrl, setStateDialog)),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("HỦY BỎ", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))),
+            const SizedBox(width: 10),
+            Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF00D4C4), Color(0xFF00A89B)]),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: ElevatedButton(
+                onPressed: () => _saveProduct(context, id, nameCtrl, catCtrl, priceCtrl, stockCtrl, imgCtrl, expiryCtrl),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent, foregroundColor: Colors.white),
+                child: Text(id == null ? "LƯU SẢN PHẨM" : "CẬP NHẬT NGAY", style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogField(TextEditingController ctrl, String hint, IconData icon, {bool isNumber = false, bool readOnly = false, VoidCallback? onTap}) {
+    return Container(
+      decoration: BoxDecoration(color: const Color(0xFFF7FAFC), borderRadius: BorderRadius.circular(15)),
+      child: TextField(
+        controller: ctrl,
+        readOnly: readOnly,
+        onTap: onTap,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: Icon(icon, color: const Color(0xFF00D4C4), size: 20),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        ),
+      ),
+    );
+  }
+
+  // --- Logic Helpers ---
+
+  Future<void> _pickDate(BuildContext context, TextEditingController ctrl, void Function(void Function()) setStateDialog) async {
+    final picked = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 365)), firstDate: DateTime.now(), lastDate: DateTime(2100));
+    if (picked != null) {
+      setStateDialog(() => ctrl.text = _dateFormat.format(picked));
+    }
+  }
+
+  Future<void> _handleUploadImage(BuildContext context, TextEditingController imgCtrl, void Function(void Function()) setStateDialog) async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      if (picked == null) return;
+
+      showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF00D4C4))));
+      
+      final base64Image = base64Encode(picked.files.first.bytes!);
+      final response = await http.post(
+        Uri.parse('https://api.imgbb.com/1/upload?key=${ImageUploadConfig.imgbbApiKey}'),
+        body: {'image': base64Image},
+      );
+
+      Navigator.pop(context); // Close loading
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setStateDialog(() => imgCtrl.text = data['data']['url']);
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi tải ảnh: $e"), backgroundColor: Colors.redAccent));
+    }
+  }
+
+  void _saveProduct(BuildContext context, String? id, var name, var cat, var price, var stock, var img, var expiry) {
+    final expiryDate = expiry.text.isNotEmpty ? _dateFormat.parse(expiry.text) : null;
+    final map = {
+      'name': name.text,
+      'category': cat.text,
+      'price': int.tryParse(price.text) ?? 0,
+      'stock': int.tryParse(stock.text) ?? 0,
+      'imageUrl': img.text,
+      'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate) : null,
+    };
+
+    if (id == null) {
+      FirebaseFirestore.instance.collection('medicines').add(map);
+    } else {
+      FirebaseFirestore.instance.collection('medicines').doc(id).update(map);
+    }
+    Navigator.pop(context);
+  }
+
+  void _confirmDelete(BuildContext context, String id) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Xác nhận xóa?"),
+        content: const Text("Hành động này không thể hoàn tác."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("HỦY")),
+          TextButton(onPressed: () {
+            FirebaseFirestore.instance.collection('medicines').doc(id).delete();
+            Navigator.pop(context);
+          }, child: const Text("XÓA VĨNH VIỄN", style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _parseExpiryDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  bool _isExpired(DateTime? date) => date != null && date.isBefore(DateTime.now());
+  String _formatExpiryDate(DateTime? date) => date != null ? _dateFormat.format(date) : "N/A";
 }
