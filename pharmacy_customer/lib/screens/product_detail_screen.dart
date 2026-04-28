@@ -380,14 +380,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               child: const Center(child: Icon(Icons.medication_rounded, color: AppTheme.primaryTeal, size: 50)),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(24),
+          const Padding(
+            padding: EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("Sản phẩm bổ sung", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-                const SizedBox(height: 8),
-                const Text("450.000đ", style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.w900)),
+                Text("Sản phẩm bổ sung", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                SizedBox(height: 8),
+                Text("450.000đ", style: TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.w900)),
               ],
             ),
           ),
