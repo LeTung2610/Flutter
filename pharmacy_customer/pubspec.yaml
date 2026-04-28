@@ -1,0 +1,47 @@
+name: pharmacy_customer
+description: "A Premium Luxury Pharmacy Web Application - NeelMilk"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  
+  # Core
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.2
+  
+  # Navigation & State
+  go_router: ^14.3.0
+  flutter_riverpod: ^2.5.1
+  
+  # UI & UX
+  google_fonts: ^6.2.1
+  intl: ^0.19.0
+  shimmer: ^3.0.0
+  animate_do: ^3.3.4
+  flutter_spinkit: ^5.2.1
+  font_awesome_flutter: ^10.7.0
+  
+  # Data Visualization (Admin Dashboard)
+  fl_chart: ^0.69.0
+  
+  # Responsive Helpers
+  responsive_framework: ^1.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
