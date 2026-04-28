@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp"
+    android:background="#F8F9FA">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ĐĂNG KÝ TÀI KHOẢN"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#00A896"
+        android:layout_marginBottom="30dp"/>
+
+    <EditText
+        android:id="@+id/edtRegUsername"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:hint="Tên đăng nhập mới"
+        android:paddingLeft="15dp"
+        android:layout_marginBottom="15dp"
+        android:background="@android:drawable/edit_text"/>
+
+    <EditText
+        android:id="@+id/edtRegPassword"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:hint="Mật khẩu"
+        android:inputType="textPassword"
+        android:paddingLeft="15dp"
+        android:layout_marginBottom="15dp"
+        android:background="@android:drawable/edit_text"/>
+
+    <EditText
+        android:id="@+id/edtRegConfirmPassword"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:hint="Nhập lại mật khẩu"
+        android:inputType="textPassword"
+        android:paddingLeft="15dp"
+        android:layout_marginBottom="30dp"
+        android:background="@android:drawable/edit_text"/>
+
+    <Button
+        android:id="@+id/btnRegisterSubmit"
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="TẠO TÀI KHOẢN"
+        android:backgroundTint="#00A896"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginBottom="15dp"/>
+
+    <TextView
+        android:id="@+id/tvBackToLogin"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Đã có tài khoản? Quay lại Đăng nhập"
+        android:textColor="#007BFF"
+        android:textStyle="italic"
+        android:padding="10dp"/>
+
+</LinearLayout>
