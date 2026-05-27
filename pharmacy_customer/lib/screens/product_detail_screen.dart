@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:responsive_framework/responsive_framework.dart';
 import '../theme/app_theme.dart';
 import 'dart:ui';
 import 'dart:math' as math;
@@ -35,7 +34,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isDesktop = ResponsiveBreakpoints.of(context).isDesktop;
+    final isDesktop = size.width >= 1024;
     final stock = int.tryParse(widget.data['stock']?.toString() ?? '0') ?? 0;
     final price = num.tryParse(widget.data['price']?.toString() ?? '0') ?? 0;
     final imageUrl = widget.data['imageUrl'] ?? widget.data['image'] ?? '';
