@@ -1,0 +1,5 @@
+# pack-refs with: peeled fully-peeled sorted 
+0f73f84569846b3804eccfaf456244352eb14437 refs/heads/backup/remove-pharmacy-customer
+892c952c447b1d43e6c19fd09329db3417d9a050 refs/heads/dev/cleanup-index
+cd10ca54570937c2333be5996282c985e0e6d05e refs/heads/main
+ac06f91ab0160018c2823b8e4e8394bce010c0a3 refs/heads/restore-wip
