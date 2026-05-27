@@ -1,133 +1,88 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../config/image_upload_config.dart';
 
 class ImageUploadService {
-  /// Upload image file qua proxy backend
-  /// Returns the uploaded image URL on success
-  /// Throws an exception on failure
-  static Future<String> uploadImage(File imageFile) async {
-    if (!imageFile.existsSync()) {
-      throw Exception("Tệp ảnh không tồn tại: ${imageFile.path}");
-    }
+  /// Upload image bytes - Tự động chọn giữa Proxy hoặc trực tiếp tới ImgBB
+  static Future<String> uploadImage(Uint8List bytes) async {
+    // 1. Nếu có Proxy URL hợp lệ, ưu tiên dùng Proxy (để tránh CORS trên Web)
+    if (ImageUploadConfig.isProxyConfigured) {
+      return _uploadViaProxy(bytes);
+    } 
+    
+    // 2. Nếu không có Proxy, upload trực tiếp lên ImgBB
+    return _uploadDirectToImgBB(bytes);
+  }
 
-    final proxyUrl = ImageUploadConfig.proxyUrl;
-    if (proxyUrl.isEmpty) {
-      throw Exception(
-        "Proxy URL chưa được cấu hình. "
-        "Vui lòng deploy proxy_server/ và cập nhật lib/config/image_upload_config.dart",
-      );
+  /// Upload trực tiếp lên ImgBB API
+  static Future<String> _uploadDirectToImgBB(Uint8List bytes) async {
+    if (!ImageUploadConfig.isConfigured) {
+      throw Exception("ImgBB API Key chưa được cấu hình trong image_upload_config.dart");
     }
 
     try {
-      // Read image file and convert to base64
-      final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
+      
+      final response = await http.post(
+        Uri.parse(ImageUploadConfig.imgbbApiUrl),
+        body: {
+          'key': ImageUploadConfig.imgbbApiKey,
+          'image': base64Image,
+        },
+      ).timeout(const Duration(seconds: 30));
 
-      // Send POST request to proxy backend
-      final response = await http
-          .post(
-            Uri.parse(proxyUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'imageBase64': base64Image}),
-          )
-          .timeout(
-            const Duration(seconds: 60),
-            onTimeout: () =>
-                throw Exception("Tải ảnh lên timeout sau 60 giây"),
-          );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data']['url'];
+        }
+      }
+      
+      final errorData = jsonDecode(response.body);
+      throw Exception(errorData['error']?['message'] ?? "Lỗi upload trực tiếp lên ImgBB (HTTP ${response.statusCode})");
+    } catch (e) {
+      throw Exception("Không thể kết nối tới ImgBB: $e");
+    }
+  }
+
+  /// Upload qua Proxy server
+  static Future<String> _uploadViaProxy(Uint8List bytes) async {
+    try {
+      final base64Image = base64Encode(bytes);
+      final response = await http.post(
+        Uri.parse(ImageUploadConfig.proxyUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'imageBase64': base64Image}),
+      ).timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
         if (responseData['success'] == true && responseData['url'] != null) {
           return responseData['url'];
-        } else {
-          throw Exception(
-            "Lỗi từ proxy: ${responseData['error'] ?? response.body}",
-          );
         }
-      } else {
-        String errorMsg = "Tải ảnh lên thất bại (HTTP ${response.statusCode})";
-        try {
-          final errorData = jsonDecode(response.body);
-          errorMsg = errorData['error'] ?? errorMsg;
-        } catch (_) {
-          // Ignore parse error
-        }
-        throw Exception(errorMsg);
+        throw Exception(responseData['error'] ?? "Proxy không trả về URL");
       }
+      throw Exception("Lỗi Proxy: HTTP ${response.statusCode}");
     } catch (e) {
       rethrow;
     }
   }
 
   /// Upload multiple images concurrently
-  /// Returns list of uploaded image URLs
-  static Future<List<String>> uploadMultipleImages(
-    List<File> imageFiles,
-  ) async {
-    if (imageFiles.isEmpty) {
-      throw Exception("No images provided for upload");
-    }
-
+  static Future<List<String>> uploadMultipleImages(List<Uint8List> imagesBytes) async {
+    if (imagesBytes.isEmpty) return [];
     try {
-      final uploadFutures = imageFiles.map((file) => uploadImage(file));
-      final results = await Future.wait(uploadFutures);
-      return results;
+      final uploadFutures = imagesBytes.map((bytes) => uploadImage(bytes));
+      return await Future.wait(uploadFutures);
     } catch (e) {
       rethrow;
     }
   }
 
-  /// Upload image from base64 string qua proxy backend
+  /// Tương thích ngược với Base64 string
   static Future<String> uploadImageFromBase64(String base64Image) async {
-    if (base64Image.isEmpty) {
-      throw Exception("Base64 image string là rỗng");
-    }
-
-    final proxyUrl = ImageUploadConfig.proxyUrl;
-    if (proxyUrl.isEmpty) {
-      throw Exception(
-        "Proxy URL chưa được cấu hình. "
-        "Vui lòng deploy proxy_server/ và cập nhật lib/config/image_upload_config.dart",
-      );
-    }
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse(proxyUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'imageBase64': base64Image}),
-          )
-          .timeout(
-            const Duration(seconds: 60),
-            onTimeout: () =>
-                throw Exception("Tải ảnh lên timeout sau 60 giây"),
-          );
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        if (responseData['success'] == true && responseData['url'] != null) {
-          return responseData['url'];
-        } else {
-          throw Exception(
-            "Lỗi từ proxy: ${responseData['error'] ?? response.body}",
-          );
-        }
-      } else {
-        String errorMsg = "Tải ảnh lên thất bại (HTTP ${response.statusCode})";
-        try {
-          final errorData = jsonDecode(response.body);
-          errorMsg = errorData['error'] ?? errorMsg;
-        } catch (_) {
-          // Ignore parse error
-        }
-        throw Exception(errorMsg);
-      }
-    } catch (e) {
-      rethrow;
-    }
+    final bytes = base64Decode(base64Image);
+    return uploadImage(bytes);
   }
 }

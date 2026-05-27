@@ -1,39 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
+import 'dart:typed_data';
 import '../services/image_upload_service.dart';
 
 /// Utility widget for picking and uploading images
-/// Usage:
-/// ImagePickerHelper.pickAndUploadImage(context).then((url) {
-///   if (url != null) print('Uploaded: $url');
-/// });
 class ImagePickerHelper {
   /// Pick image from local machine and upload to ImgBB
-  /// Returns the uploaded image URL on success, null if cancelled or error
+  /// Supports both Web and Mobile by using bytes instead of File path
   static Future<String?> pickAndUploadImage(BuildContext context) async {
     try {
       // Pick image file
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowCompression: true,
+        withData: true, // Crucial for Web
       );
 
       if (result == null || result.files.isEmpty) {
-        // User cancelled
         return null;
       }
 
-      final pickedFile = File(result.files.first.path!);
+      final Uint8List? fileBytes = result.files.first.bytes;
+      
+      if (fileBytes == null) {
+        throw Exception("Không thể đọc dữ liệu ảnh. Vui lòng thử lại.");
+      }
 
-      // Show loading dialog during upload
+      // Show loading dialog
       if (context.mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (BuildContext dialogContext) {
-            return WillPopScope(
-              onWillPop: () async => false,
+            return PopScope(
+              canPop: false,
               child: Dialog(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
@@ -44,7 +44,7 @@ class ImagePickerHelper {
                     const SizedBox(height: 20),
                     const Text(
                       'Đang tải ảnh lên...',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -55,8 +55,8 @@ class ImagePickerHelper {
       }
 
       try {
-        // Upload image
-        final uploadedUrl = await ImageUploadService.uploadImage(pickedFile);
+        // Upload image using bytes
+        final uploadedUrl = await ImageUploadService.uploadImage(fileBytes);
 
         // Close loading dialog
         if (context.mounted) {
@@ -98,7 +98,7 @@ class ImagePickerHelper {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Lỗi: ${e.toString()}'),
+            content: Text('❌ Lỗi hệ thống: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -108,23 +108,29 @@ class ImagePickerHelper {
   }
 
   /// Pick multiple images and upload all of them
-  /// Returns list of uploaded image URLs
   static Future<List<String>> pickAndUploadMultipleImages(
     BuildContext context,
   ) async {
     try {
-      // Pick multiple image files
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowCompression: true,
         allowMultiple: true,
+        withData: true,
       );
 
       if (result == null || result.files.isEmpty) {
         return [];
       }
 
-      final pickedFiles = result.files.map((f) => File(f.path!)).toList();
+      final List<Uint8List> imagesBytes = result.files
+          .where((f) => f.bytes != null)
+          .map((f) => f.bytes!)
+          .toList();
+
+      if (imagesBytes.isEmpty) {
+        throw Exception("Không thể đọc dữ liệu ảnh.");
+      }
 
       // Show loading dialog
       if (context.mounted) {
@@ -132,18 +138,18 @@ class ImagePickerHelper {
           context: context,
           barrierDismissible: false,
           builder: (BuildContext dialogContext) {
-            return WillPopScope(
-              onWillPop: () async => false,
+            return const PopScope(
+              canPop: false,
               child: Dialog(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const CircularProgressIndicator(color: Colors.white),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Đang tải ảnh lên...',
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 20),
+                    Text(
+                      'Đang tải các ảnh lên...',
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ],
@@ -155,56 +161,36 @@ class ImagePickerHelper {
       }
 
       try {
-        // Upload all images
         final uploadedUrls = await ImageUploadService.uploadMultipleImages(
-          pickedFiles,
+          imagesBytes,
         );
 
-        // Close loading dialog
         if (context.mounted) {
           Navigator.of(context).pop();
         }
 
-        // Show success message
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('✅ Tải ${uploadedUrls.length} ảnh thành công!'),
               backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
             ),
           );
         }
 
         return uploadedUrls;
       } catch (e) {
-        // Close loading dialog
         if (context.mounted) {
           Navigator.of(context).pop();
         }
-
-        // Show error message
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Lỗi: ${e.toString()}'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
-            ),
+            SnackBar(content: Text('❌ Lỗi: ${e.toString()}'), backgroundColor: Colors.red),
           );
         }
-
         return [];
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Lỗi: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
       return [];
     }
   }

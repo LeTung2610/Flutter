@@ -26,9 +26,21 @@ class OverviewScreen extends StatelessWidget {
                     stream: FirebaseFirestore.instance.collection('orders').snapshots(),
                     builder: (context, ordSnapshot) {
                       int totalRevenue = 0;
+                      
+                      // Doanh thu từ hóa đơn tại quầy
                       if (invSnapshot.hasData) {
                         for (var doc in invSnapshot.data!.docs) {
                           totalRevenue += int.tryParse(doc['totalPrice']?.toString() ?? '0') ?? 0;
+                        }
+                      }
+
+                      // Doanh thu từ đơn hàng Online (đã đặt)
+                      if (ordSnapshot.hasData) {
+                        for (var doc in ordSnapshot.data!.docs) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          // Có thể lọc theo status nếu chỉ muốn tính đơn đã giao, 
+                          // nhưng thường Admin muốn thấy doanh số đơn mới ngay
+                          totalRevenue += int.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0;
                         }
                       }
 
